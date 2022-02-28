@@ -191,8 +191,8 @@ if (file.exists("data/NSL-KDD.RData")) {
   # These are the final column names as specified in the original CSV files
   col_names <- c(basic_features, content_features, time_based_traffic_features, host_based_traffic_features, "label", "difficulty")
   
-  nsl_kdd_test_csv = read.csv(file = "https://github.com/jmnwong/NSL-KDD-Dataset/raw/master/KDDTest%2B.txt", col.names = col_names, header = FALSE)
-  nsl_kdd_train_csv = read.csv(file = "https://github.com/jmnwong/NSL-KDD-Dataset/raw/master/KDDTrain%2B.txt", col.names = col_names, header = FALSE)
+  nsl_kdd_train_csv = read.csv(unz("data/NSL-KDD.zip", "KDDTrain+.txt"), col.names = col_names, header = FALSE)
+  nsl_kdd_test_csv = read.csv(unz("data/NSL-KDD.zip", "KDDTest+.txt"), col.names = col_names, header = FALSE)
   # Remove difficulty column
   nsl_kdd_train_csv <- nsl_kdd_train_csv %>% select(-difficulty)
   nsl_kdd_test_csv <- nsl_kdd_test_csv %>% select(-difficulty)
