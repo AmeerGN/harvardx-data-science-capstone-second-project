@@ -1,0 +1,146 @@
+---
+title: "Intrusion Detection System (IDS) using NSL-KDD Dataset - Analysis and Results"
+author: "Ameer Nasrallah"
+date: "01 March 2022"
+output: pdf_document
+  pdf_document:
+    number_sections: true
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\newpage
+
+# Introduction
+
+The goal of this project is to build an intrusion detection system (IDS). An IDS is a system that automatically checks and analyzes network flow to detect and prevent abnormal activities. This includes monitoring both user and system behaviors, such as the unauthorized access to network resources, and the analysis of network packet fields (e.g. IP address, flag, ports). Upon detecting an intrusion, the IDS alarms it to the management.
+
+An IDS can be classified based on the detection mechanism to knowledge-based and behavior-based. In knowledge-based (or signature-based) detection, the IDS uses misuse detection to detect known attacks by comparing between received packets and a predefined set of collected data (e.g. signature files). While in behavior-based (or anomaly-based) detection, the IDS uses anomaly detection to detect unknown attacks by comparing the system state with the normal activity profile it builds. Behavior-based detection suffers from high false alarm rates. Despite that, it is still considered better than knowledge-based detection as it can detect novel or zero-day attacks. Hence, anomaly-based detection got more attention during the past twenty years.
+
+The main challenge in anomaly-based IDS is to enable it to update itself and detect attacks in short time. Consequently, there have been many research efforts to apply machine learning techniques in intrusion detection, and accordingly have been many efforts to build effective datasets. One of the effective datasets in intrusion detection is NSL-KDD dataset.
+
+In this project, we will build an anomaly-based IDS using NSL-KDD dataset. Then, we will evaluate the performance of the IDS using different machine learning classifiers. The main metrics to be considered are: overall accuracy, detection rates, and false alarm rates.
+
+# NSL-KDD Dataset Characteristics
+
+NSL-KDD dataset [10] is one of the most effective datasets in the domain of
+intrusion detection. It is a modified version of KDDCUP’99 dataset [56], which was
+created in 1999. KDDCUP’99 is constructed from simulated TCP connections in
+a military network environment [3]. KDDCUP’99 had been the most widely used
+dataset to evaluate IDSs until recent years [60]. However, researchers found some
+deficiencies that make it less reliable [10]:
+1. Redundant records: this mainly affects the performance of any classifier such
+that it is biased towards more frequent records.
+2. Low difficulty level: applying simple machine learning methods will give at
+least 86% accuracy, which makes it difficult to compare the different models
+as they will fall in the range of 86% to 100%.
+To deal with these deficiencies, the following improvements were applied to NSLKDD
+[10]:
+1. Removing all redundant records from train and test sets so that there will be
+no biasing.
+2. Better sampling and distribution for the records which will increase the classification
+challenge.
+3. Reasonable number of records in train and test sets. This makes it affordable
+to run experiments on the whole dataset without any need for sampling.
+NSL-KDD still does not perfectly represent real networks. Nonetheless, it is still a
+reliable benchmark dataset to compare intrusion detection methods.
+
+NSL-KDD records are labelled as normal or attack. There are 39 different attacks
+distributed (with some overlap) as 22 attacks in the training set and 37 attacks in
+the testing set. These attacks fall into four basic categories detailed as follows:
+• Denial of Service Attack (DoS): involves attacks which try to keep the machine’s
+memory or computing resources too busy such that the machine cannot
+serve its legitimate users.
+• User to Root Attack (U2R): involves attacks in which the attacker first gains
+access to a normal user account, and then tries to exploit some vulnerability
+to gain root access to the system.
+• Remote to Local Attack (R2L): involves attacks in which attacker keeps sending
+packets to a machine over some network. The main purpose in these
+attacks is to try to find a system vulnerability to gain access as a normal user.
+• Probing Attack: these attacks scan the computer networks to find some vulnerability
+in its security controls.
+
+Moreover, NSL-KDD is constructed from 41 attributes or features. These features
+fall into three main categories as shown in Table 3.2:
+1. Basic features: these attributes are extracted from a TCP/IP connection.
+2. Content features: these attributes are extracted from the data portion of the
+packet. They are very important to detect R2L and U2R attacks. This is
+because these attacks usually involve a single connection.
+3. Traffic features:
+(a) Time-based traffic features: these attributes are extracted from connections
+in the past two seconds that have the same destination or same
+service as current connection.
+(b) Connection-based traffic features: these attributes are extracted from last
+100 connections that has the same destination or same service as current
+connection. Extracting such attributes contributes more in detecting
+probing attacks.
+
+## Mapping of Attacks
+
+## Types of Characteristics
+
+## Nominal vs. Numeric
+
+## Distribution of Multi-class
+
+## Distribution of Binary-class
+
+# Analysis (Preprocessing and Training)
+
+## Nominal Features Transformation using Probability Density Function (PDF)
+
+Feature ranking and many classification algorithms are mathematical-based.
+Therefore, it is important to transform the nominal features of a dataset into their
+numerical representation. NSL-KDD dataset has three nominal features (as stated
+in Table 3.2): protocol_type, service, and flag.
+To avoid biasing the data, we did not encode the data with a static value map
+(e.g. http takes 1, smtp takes 2, and so on). Rather, we applied probability density
+function as in Eq. (3.1) [29] such that the most frequent nominal value in a column
+takes the highest numerical value while still being bounded between 0 and 1. This
+range goes along with the numerical features normalization (as explained in the next
+section).
+PDF(x) =
+occur(x)
+n
+(3.1)
+where occur(x) is the number of occurrences of value x within a column, and n is
+the total number of records.
+
+## Numerical Features Normalization using Min-Max
+
+Another important step before working with feature ranking and classification
+algorithms is to normalize numeric features. Normalizing a feature means to scale
+its values to fall into a smaller range [36].
+For example, there are features in NSL-KDD dataset that have wide range of values,
+such as: duration, src_bytes and num_root. While there are other features that have
+smaller range of values, such as: num_failed_logins, is_host_login, and srv_count.
+Keeping the features without normalization may cause biasing towards selecting
+wide range features which may also affect classification performance.
+To prevent this dominance, we chose to scale all the numeric features to fall in the
+range of [0, 1] using min-max normalization. Min-max scaling is shown in Eq. (3.2),
+where x is the value to be scaled in feature X, MinMax(x) is the scaled value of
+x, Min(X) and Max(X) are the minimum and maximum values respectively in feature X, min and max are the boundaries of the new range.
+MinMax(x) = min + (max − min)(
+x −Min(X)
+Max(X) −Min(X)
+)
+
+## Training Classifiers
+### Training time for Binary-Class
+### Best fit for Binary-Class
+### Training time for Multi-Class
+### Best fit for Multi-Class
+
+## Metrics
+
+# Results
+## Perform prediction for Binary-Class
+## Performance for Binary-Class
+## Perform prediction for Multi-Class
+## Performance for Multi-Class
+
+# Conclusion
+
