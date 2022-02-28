@@ -8,7 +8,7 @@ It is an R project structured as: data folder, R script file, R Markdown report 
 
 ### Dataset
 
-The dataset for this project is [NSL-KDD dataset](https://www.unb.ca/cic/datasets/nsl.html). It is downloaded and stored in the `data` folder.
+The dataset for this project is [NSL-KDD dataset](https://www.unb.ca/cic/datasets/nsl.html). It is downloaded and stored in the `data` folder as `NSL-KDD.zip`.
 
 ### R Script File
 
