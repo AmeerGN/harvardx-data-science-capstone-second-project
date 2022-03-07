@@ -7,6 +7,8 @@ output:
     number_sections: true
     toc: true
     extra_dependencies: ["float"]
+header-includes:
+  - \usepackage[ruled,vlined,linesnumbered]{algorithm2e}
 bibliography: references.bib
 csl: ieee.csl
 ---
@@ -25,7 +27,7 @@ An IDS can be classified based on the detection mechanism to knowledge-based [@c
 
 The goal of this project is to build two anomaly-based IDSs. The first system is a binary classification system that will classify a TCP connection (defined by certain attributes such as the port, protocol, etc) as either a normal activity or as an attack. While the second system will be a multi-class classification system that will classify the TCP connection as a normal activity or as one of four known attacks (DoS, Probing, R2L or U2R). Both systems will be built using NSL-KDD dataset [@tavallaee2009detailed] which provides the predictions of about 150000 simulated TCP connections.
 
-We will evaluate the performance of each system using six classifiers (Recursive Partitioning, Naive Bayes, KNN, SVM, Random Forest, and MLP), given that the data is already divided into training and testing sets (about 15% of the data). For each classifier, we will apply 10-fold cross validation on the training set only to find the best tuned parameters. Then, the performance of each tuned classifier will be measured by predicting the testing set output. We will report different metrics, but we will focus mainly on three of them: overall accuracy (max), detection rates (max), and false alarm rates (min).
+We will evaluate the performance of each system using six classifiers (Recursive Partitioning, Naive Bayes, KNN, SVM, Random Forest, and Multi-Layer Perceptron), given that the data is already divided into training and testing sets (about 15% of the data). For each classifier, we will apply a tune grid search with 10-fold cross validation on the training set only to find the best tuned parameters. Then, the performance of each tuned classifier will be measured by predicting the testing set output. We will report different metrics, but we will focus mainly on three of them: overall accuracy (max), detection rates (max), and false alarm rates (min).
 
 The rest of this report is organized as follows. We will start by studying the characteristics of NSL-KDD dataset. Then, we will explain the the methodology. Then, we will analyze the training set and tune the classifiers. Then, we will use the final tuned classifiers to predict the testing set. And finally, we will conclude all the work with future improvements.
 
@@ -212,7 +214,7 @@ rbind(training_multi_label, testing_multi_label) %>%
   labs(x = "Label", y = "Frequency")
 ```
 
-## Attributes Description
+## Features Description
 Moreover, NSL-KDD is constructed from 41 attributes or features. These features fall into three main categories as shown in Table \@ref(tab:nsl-attrs-tab):
 
 1. Basic features: these attributes are extracted from a TCP/IP connection.
@@ -248,49 +250,465 @@ kbl(atts_df, caption = "NSL-KDD Attributes", col.names = c("Category", "Feature"
 
 # Methodology
 
-## Overview
+We will build two IDSs, one for binary classification and the other for multi-class classification. So, the training and testing sets for the first system will have the `label` as `Normal` or `Attack`, while for the second system the `label` will be `Normal` or `DoS` or `Probing` or `R2L` or `U2R`. The performance of each system will be evaluated using six classifiers: Recursive Partitioning, Naive Bayes, KNN, SVM, Random Forest, and Multi-Layer Perceptron. Each classifier needs to be tuned before training it on the whole training set. Therefore, we chose to apply a tune grid search with 10-fold cross validation on each pair of system and classifier. As a result, we will have the best tuned parameters for each classifier to the relevant system. Then, we will train the best tuned classifiers on the relevant training set. Finally, we will apply the prediction on the relevant testing set, and we will report the performance metrics. The following algorithm summarizes the steps followed to tune any classifier.
 
-## Cross Validation
+\begin{algorithm}[H]
+\DontPrintSemicolon
+\SetAlgoLined
+Define sets of model parameter values to evaluate\;
+Shuffle training set randomly\;
+Split training set into 10 groups\;
+\For{each parameter set}{
+    \For{each group}{
+        Take the group as a hold out or test data set\;
+        Take the other 9 groups as a training data set\;
+        Preprocess the training data\;
+        Fit the model on the training data\;
+        Predict the hold out data\;
+    }
+    Calculate the average performance across predictions of hold out data\;
+}
+Determine the optimal parameter set\;
+Preprocess the whole training set\;
+Fit the final model to the whole training set using the optimal parameter set\;
+\caption{Tune Grid Search with 10-fold Cross-Validation Algorithm}
+\end{algorithm}
 
-## Remove Zero-Variance Numerical Features
+In the next sections, we will go through the preprocessing stage, the classifiers used, and the evaluation metrics.
 
-## Normalize Numerical Features using Min-Max
+## Preprocessing Stage
 
-<!-- Another important step before working with feature ranking and classification algorithms is to normalize numeric features. Normalizing a feature means to scale its values to fall into a smaller range [36]. For example, there are features in NSL-KDD dataset that have wide range of values, such as: duration, src_bytes and num_root. While there are other features that have smaller range of values, such as: num_failed_logins, is_host_login, and srv_count. Keeping the features without normalization may cause biasing towards selecting wide range features which may also affect classification performance. To prevent this dominance, we chose to scale all the numeric features to fall in the range of [0, 1] using min-max normalization. Min-max scaling is shown in Eq. (3.2), where x is the value to be scaled in feature X, MinMax(x) is the scaled value of x, Min(X) and Max(X) are the minimum and maximum values respectively in feature X, min and max are the boundaries of the new range. MinMax(x) = min + (max − min)( x −Min(X) Max(X) −Min(X) ) -->
+As noticed from the previous algorithm, we preprocess the data before any training step. This includes both the intermediary training steps performed within cross validation, and the final training step using the optimal tuned parameters. Moreover, the result of the preprocessing stage will be preserved to apply it on any prediction step. For example, if in the preprocessing of the first group `is_host_login` feature was removed as it has zero-variance in that training group, the same feature will be removed from the relevant testing group. Note that removing `is_host_login` feature from one of the groups does not mean it will be removed from the whole training set, because in the full training set it might not have zero-variance.
 
-<!-- ## Transform Nominal Features using Probability Density Function (PDF) -->
+We chose to apply three main steps in the preprocessing stage which are: removing zero-variance numerical features, normalizing the rest of numerical features, and transforming the nominal features to be numerical. To apply these steps, we decided to use `recipes` package [@max2021recipes] which provides powerful preprocessing capabilities. In the next subsections, we will explain briefly each of these steps.
 
-<!-- Feature ranking and many classification algorithms are mathematical-based. Therefore, it is important to transform the nominal features of a dataset into their numerical representation. NSL-KDD dataset has three nominal features (as stated in Table \@ref(tab:nsl-attrs-tab)): protocol_type, service, and flag. To avoid biasing the data, we did not encode the data with a static value map (e.g. http takes 1, smtp takes 2, and so on). Rather, we applied probability density function as in Eq. (3.1) [29] such that the most frequent nominal value in a column takes the highest numerical value while still being bounded between 0 and 1. This range goes along with the numerical features normalization (as explained in the next section). PDF(x) = occur(x) n (3.1) where occur(x) is the number of occurrences of value x within a column, and n is the total number of records. -->
+### Remove Zero-Variance Numerical Features
+A zero-variance feature is a feature that has only one static value. These features are usually removed before the training because they are seen as having no impact on the output. To apply removing zero-variance features, we used `step_zv` function from `recipes` package. This is an example of how to use `step_zv`.
 
-<!-- ## Classifiers -->
+```{r Example of step_zv usage, eval=FALSE}
+step_zv(all_numeric_predictors())
+```
 
-<!-- ## Metrics for Binary Classification -->
+### Normalize Numerical Features using Min-Max
 
-<!-- ## Metrics for Multi-class Classification -->
+Another important step before working with classification algorithms is to normalize numeric features. Normalizing a feature means to scale its values to fall into a smaller range. For example, there are features in NSL-KDD dataset that have wide range of values, such as: `duration`, `src_bytes` and `num_root`. While there are other features that have smaller range of values, such as: `num_failed_logins`, `is_host_login`, and `srv_count`. Keeping the features without normalization may cause biasing towards selecting wide range features which may also affect classification performance. To prevent this dominance, we chose to scale all the numeric features to fall in the range of 0-1 using min-max normalization. Min-max scaling is shown in the following equation, where $x$ is the value to be scaled in feature $X$, $MinMax(x)$ is the scaled value of $x$, $Min(X)$ and $Max(X)$ are the minimum and maximum values respectively in feature $X$, $min$ and $max$ are the boundaries of the new range.
 
-<!-- # Analysis -->
+$$
+    MinMax(x) = min + (max - min)(\frac{x - Min(X)}{Max(X) - Min(X)})
+$$
 
-<!-- ## Training Classifiers -->
+To apply normalizing numerical features, we used `step_range` function from `recipes` package. This is an example of how to use `step_range`.
 
-<!-- ### Training Time for Binary Classifciation -->
+```{r Example of step_range usage, eval=FALSE}
+step_range(all_numeric_predictors())
+```
 
-<!-- ### Best Fit for Binary Classification -->
+### Transform Nominal Features using Probability Density Function (PDF)
 
-<!-- ### Training Time for Multi-class Classification -->
+Many classification algorithms are mathematical-based. Therefore, it is important to transform the nominal features of a dataset into their numerical representation. NSL-KDD dataset has three nominal features (as stated in Table \@ref(tab:nsl-attrs-tab)): `protocol_type`, `service`, and `flag`.
 
-<!-- ### Best Fit for Multi-class Classification -->
+To avoid biasing the data, we did not encode the data with a static value map (e.g. http takes 1, smtp takes 2, and so on). Rather, we applied probability density function as in the equation below [@seth2016intrusion] such that the most frequent nominal value in a column takes the highest numerical value while still being bounded between 0 and 1. This range goes along with the numerical features normalization.
 
-<!-- # Results -->
+$$
+PDF(x) = \frac{occur(x)}{n}
+$$
 
-<!-- ## Perform Prediction for Binary Classification -->
+where $occur(x)$ is the number of occurrences of value $x$ within a column, and $n$ is the total number of records.
 
-<!-- ## Performance for Binary Classification -->
+To apply transforming nominal features, we had to build a custom `step` according to official `recipes` documentation ^[http://cran.nexr.com/web/packages/recipes/vignettes/Custom_Steps.html] as shown below. We called this step `step_nominalpdf`.
 
-<!-- ## Perform Prediction for Multi-class Classification -->
+```{r Normalize PDF Recipe Step Definition}
+##########################################################
+# Normalize PDF Recipe Step Definition
+# References: http://cran.nexr.com/web/packages/recipes/vignettes/Custom_Steps.html
+#             https://github.com/tidymodels/recipes/blob/main/R/center.R
+##########################################################
 
-<!-- ## Performance for Multi-class Classification -->
+step_nominalpdf <-
+  function(recipe,
+           ..., 
+           role = NA,
+           trained = FALSE,
+           ref_dist = NULL,
+           skip = FALSE,
+           id = rand_id("nominalpdf")) {
+    add_step(
+      recipe, 
+      step_nominalpdf_new(
+        terms = enquos(...), 
+        trained = trained,
+        role = role, 
+        ref_dist = ref_dist,
+        skip = skip,
+        id = id
+      )
+    )
+}
 
-<!-- # Conclusion -->
+step_nominalpdf_new <-
+  function(terms, role, trained, ref_dist, skip, id) {
+    step(
+      subclass = "nominalpdf", 
+      terms = terms,
+      role = role,
+      trained = trained,
+      ref_dist = ref_dist,
+      skip = skip,
+      id = id
+    )
+}
+
+prep.step_nominalpdf <- function(x, training, info = NULL, ...) {
+  col_names <- recipes_eval_select(x$terms, training, info)
+  
+  ref_dist <- list()
+  train_ln <- nrow(training)
+  for (i in col_names) {
+    # For each column, table will return the count of each value
+    # to normalize that count, we divide it by the number of rows
+    # For example, if we have (a, b, a, c, d) in a column
+    # The output will be a table like this
+    #   a   b   c   d 
+    # 0.4 0.2 0.2 0.2
+    ref_dist[[i]] <- table(training[, i]) / train_ln
+  }
+  
+  ## Always return the updated step
+  step_nominalpdf_new(
+    terms = x$terms,
+    role = x$role,
+    trained = TRUE,
+    ref_dist = ref_dist,
+    skip = x$skip,
+    id = x$id
+  )
+}
+
+pdf_by_ref <- function(x, ref) {
+  # if we have the following values in ref:
+  #   a   b   c   d 
+  # 0.4 0.2 0.2 0.2
+  # And we got x = "a", the function will return 0.4
+  # if we got x = "e", the function will return 0
+  ifelse(x %in% names(ref), ref[x][[1]], 0)
+}
+
+bake.step_nominalpdf <- function(object, new_data, ...) {
+  require(tibble)
+  vars <- names(object$ref_dist)
+  
+  # Transform the columns
+  for(i in vars) {
+    new_data[, i] <- apply(new_data[, i], 1, pdf_by_ref, ref = object$ref_dist[[i]])
+  }
+  ## Always convert to tibbles on the way out
+  tibble::as_tibble(new_data)
+}
+
+print.step_nominalpdf <- function(x, width = max(20, options()$width - 30), ...) {
+  cat("PDF for ", sep = "")
+  printer(names(x$ref_dist), x$terms, x$trained, width = width)
+  invisible(x)
+}
+
+tidy.step_nominalpdf <- function(x, ...) {
+  if (is_trained(x)) {
+    res <- tibble(terms = names(x$ref_dist),
+                  value = unname(x$ref_dist))
+  } else {
+    term_names <- sel2char(x$terms)
+    res <- tibble(terms = term_names,
+                  value = na_dbl)
+  }
+  res$id <- x$id
+  res
+}
+```
+
+This is an example of how to use `step_nominalpdf`.
+
+```{r Example of step_nominalpdf usage, eval=FALSE}
+step_nominalpdf(all_nominal_predictors())
+```
+
+## Classifiers
+
+In order to perform classification, we used `caret` package [@max2021caret] which provides predefined classification algorithms in a convenient way. Table \@ref(tab:classifiers-desc-tab) summarizes the classifiers we used indicating the name of the classifier in `caret` along with its original package (which can be `caret` itself as for `knn`).
+
+(ref:terry2019Rpart) [@terry2019Rpart]
+(ref:michal2019naivebayes) [@michal2019naivebayes]
+(ref:alexandros2004kernlab) [@alexandros2004kernlab]
+(ref:andy2002rf) [@andy2002rf]
+(ref:christoph2012mlp) [@christoph2012mlp]
+```{r classifiers-desc-tab, echo=FALSE, message=FALSE, warning=FALSE}
+classifiers_desc <- data.frame(c("Recursive Partitioning", "Naive Bayes", "KNN", "SVM", "Random Forest", "Multi-Layer Perceptron"), c("rpart", "naive_bayes", "knn", "svmLinear", "parRF", "mlp"), c("rpart::rpart (ref:terry2019Rpart)", "naivebayes::naive_bayes (ref:michal2019naivebayes)", "caret::knn3", "kernlab::ksvm (ref:alexandros2004kernlab)", "randomForest::randomForest (ref:andy2002rf)", "RSNNS::mlp (ref:christoph2012mlp)"), c("cp", "laplace, usekernel, adjust", "k", "C", "mtry", "size"))
+
+kbl(classifiers_desc, caption = "Classifiers Description", col.names = c("Classifier Name", "Caret Name", "Package::Function", "Parameters")) %>%
+    kable_styling(latex_options = c("HOLD_position")) %>%
+    column_spec(1, border_left = T) %>%
+    column_spec(4, border_right = T) %>%
+    row_spec(0, bold = T)
+```
+
+There is a great integration between `caret` and `recipes` packages which makes it too easy to build the whole training flow in few lines. Also, `caret` has strong support for parallel execution ^[http://topepo.github.io/caret/parallel-processing.html]. Here is a full example that uses `caret`, `recipes` and `doParallel` package [@microsoft2020parallel].
+
+```{r Full example on the flow using caret and recipes and doParallel, eval=FALSE}
+# Define the recipe for the preprocessing steps
+data_rec <- recipe(label ~ ., data = nsl_training_data) %>%
+              step_zv(all_numeric_predictors()) %>%
+              step_range(all_numeric_predictors()) %>%
+              step_nominalpdf(all_nominal_predictors())
+# Create a cluster
+cluster = makePSOCKcluster(detectCores() - 2)
+# Register the cluster
+registerDoParallel(cluster)
+# Register the functions related to step_nominalpdf to the cluster
+clusterExport(cl=cluster, varlist=c("step_nominalpdf", "step_nominalpdf_new", 
+                                  "prep.step_nominalpdf", "pdf_by_ref", 
+                                  "bake.step_nominalpdf", 
+                                  "print.step_nominalpdf", 
+                                  "tidy.step_nominalpdf"), envir=environment())
+set.seed(123)
+# Train KNN on NSL-KDD data taking the recipe as input (default k for cv is 10)
+model_fit <- train(x = data_rec,
+               data = nsl_training_data,
+               method = "knn",
+               trControl = trainControl(method = 'cv'))
+stopCluster(cluster)
+```
+
+## Evaluation Metrics
+
+The effectiveness of any IDS is mainly measured by [@bamakan2016effective] [@hodo2017shallow] [@hamed2018survey]: overall accuracy, detection rate, false alarm rate, and training time. A well-performing IDS would achieve a low false alarm rate, and high accuracy and detection rate. The common way to derive the definition of these metrics is through a confusion matrix.
+
+### Metrics for Binary Classification IDS
+
+In a binary classification IDS, a record that is labeled as "attack" is a "Positive" record, and a record that is labeled as "normal" is a "Negative" record. Confusion matrix is a two by two matrix that represents the four possible combinations of the actual records and the predicted records.
+
+```{=latex}
+\begin{table}[htb]
+\centering
+\caption{Confusion matrix}
+\label{tab:confusion}
+\begin{tabular}{l|l|c|c|}
+\multicolumn{2}{c}{}&\multicolumn{2}{c}{Predicted}\\
+\cline{3-4}
+\multicolumn{2}{c|}{}&Negative (normal)&Positive (attack)\\
+\cline{2-4}
+\multirow{2}{*}{Actual}& Negative (normal) & $TN$ & $FP$\\
+\cline{2-4}
+& Positive (attack) & $FN$ & $TP$\\
+\cline{2-4}
+\end{tabular}
+\end{table}
+```
+
+Table \@ref(tab:confusion) shows a confusion matrix where:
+
+* True Negative (TN): represents the number of normal records correctly predicted as normal.
+* False Positive (FP): represents the number of attack records wrongly predicted as normal.
+* False Negative (FN): represents the number of normal records wrongly predicted as attack.
+* True Positive (TP): represents the number of attack records correctly predicted as attack.
+
+Based on the confusion matrix, we can define the metrics mentioned above as follows:
+
+* Overall Accuracy: is the percent of correctly classified records. It is calculated by:
+$$
+    Overall Accuracy = \frac{TN + TP}{TN + FP + FN + TP}
+$$
+* Detection Rate (DR): also called Recall or sensitivity or true positive rate (TPR). It is the percent of correctly classified attacks to the total number of actual attacks. When it is near 1, it means that the classifier performed well in predicting almost all actual attacks. It is calculated by:
+$$
+    Detection Rate (DR) = \frac{TP}{TP + FN}
+$$
+* False Alarm Rate (FAR): also called False Positive Rate (FPR). It is the percentage of wrongly classified normal records. When it is near zero, it means that the classifier performed well in avoiding misprediction of almost all normal records. It is calculated by:
+$$
+    FAR = \frac{FP}{FP + TN}
+$$
+
+Another two well-known metrics that can be calculated from confusion matrix are Prediction and F1. They are calculated as following:
+$$
+    Precision = \frac{TP}{TP + FP}
+$$
+$$
+    F1 = \frac{2TP}{2TP + FP + FN}
+$$
+
+### Metrics for Multi-class Classification IDS
+
+In a multi-class IDS, all metrics except overall accuracy need to be calculated per class. Therefore, we used a strategy called one-vs-rest, which treats each class as if it is the positive class that we want to detect, and the other classes are negative. We demonstrate this treatment by having an example of a 5x5 confusion matrix on NSL-KDD classes. This confusion matrix is shown in Table \@ref(tab:multi-conf-matrix).
+
+```{=latex}
+\begin{table}[htb]
+    \centering
+    \caption{Multi-class confusion matrix}
+    \label{tab:multi-conf-matrix}
+    \begin{tabular}{l|l|c|c|c|c|c|}
+    \multicolumn{3}{c}{}&\multicolumn{2}{c}{Predicted}&\multicolumn{2}{c}{}\\
+    \cline{3-7}
+    \multicolumn{2}{c|}{} & Normal & DoS & Probing & R2L & U2R\\
+    \cline{2-7}
+    \multirow{5}{*}{Actual}& Normal & 21761 & 286 & 677 & 287 & 106\\
+    \cline{2-7}
+    & DoS & 1183 & 14535 & 209 & 74 & 15\\
+    \cline{2-7}
+    & Probing & 510 & 72 & 3550 & 68 & 23\\
+    \cline{2-7}
+    & R2L & 631 & 77 & 197 & 235 & 24\\
+    \cline{2-7}
+    & U2R & 31 & 1 & 1 & 2 & 1\\
+    \cline{2-7}
+    \end{tabular}
+\end{table}
+```
+
+We will break this confusion matrix into 5 smaller matrices each of size 2x2. Tables \@ref(tab:confusion-normal)-\@ref(tab:confusion-u2r) show the resulting confusion matrices for each class in NSL-KDD. And now, we can easily calculate the metrics as follows:
+
+* Overall Accuracy:
+$$
+\frac{21761 + 14535 + 3550 + 235 + 1}{44556}=\frac{40082}{44556}=0.8996
+$$
+* Normal DR:
+$$
+\frac{21761}{21761 + 1356}=\frac{21761}{23117}=0.9413
+$$
+* DoS DR: 
+$$
+\frac{14535}{14535 + 1481}=\frac{14535}{16016}=0.9075
+$$
+* Probing DR:
+$$
+\frac{3550}{3550 + 673}=\frac{3550}{4223}=0.8407
+$$
+* R2L DR:
+$$
+\frac{235}{235 + 929}=\frac{235}{1164}=0.2019
+$$
+* U2R DR:
+$$
+\frac{1}{1 + 35}=\frac{1}{36}=0.0278
+$$
+* Normal FAR:
+$$
+\frac{2355}{2355 + 19084}=\frac{2355}{21439}=0.1098
+$$
+* DoS FAR:
+$$
+\frac{436}{436 + 28104}=\frac{436}{28540}=0.0153
+$$
+* Probing FAR:
+$$
+\frac{1084}{1084 + 39249}=\frac{1084}{40333}=0.0269
+$$
+* R2L FAR:
+$$
+\frac{431}{431 + 42961}=\frac{431}{43392}=0.0099
+$$
+* U2R FAR:
+$$
+\frac{168}{168 + 44352}=\frac{168}{44520}=0.0037
+$$
+
+```{=latex}
+\begin{table}[ht]
+\begin{minipage}{0.5\textwidth}
+\caption{Normal Confusion matrix}
+\label{tab:confusion-normal}
+\begin{tabular}{l|l|c|c|}
+\multicolumn{2}{c}{}&\multicolumn{2}{c}{Predicted}\\
+\cline{3-4}
+\multicolumn{2}{c|}{}&Other&Normal\\
+\cline{2-4}
+\multirow{2}{*}{Actual}& Other & 19084 & 2355\\
+\cline{2-4}
+& Normal & 1356 & 21761\\
+\cline{2-4}
+\end{tabular}
+\end{minipage}
+\begin{minipage}{0.5\textwidth}
+\caption{DoS Confusion matrix}
+\label{tab:confusion-dos}
+\begin{tabular}{l|l|c|c|}
+\multicolumn{2}{c}{}&\multicolumn{2}{c}{Predicted}\\
+\cline{3-4}
+\multicolumn{2}{c|}{}&Other&DoS\\
+\cline{2-4}
+\multirow{2}{*}{Actual}& Other & 28104 & 436\\
+\cline{2-4}
+& DoS & 1481 & 14535\\
+\cline{2-4}
+\end{tabular}
+\end{minipage}
+\par\vspace{2cm}
+\begin{minipage}{0.5\textwidth}
+\caption{Probing Confusion matrix}
+\label{tab:confusion-probing}
+\begin{tabular}{l|l|c|c|}
+\multicolumn{2}{c}{}&\multicolumn{2}{c}{Predicted}\\
+\cline{3-4}
+\multicolumn{2}{c|}{}&Other&Probing\\
+\cline{2-4}
+\multirow{2}{*}{Actual}& Other & 39249 & 1084\\
+\cline{2-4}
+& Probing & 673 & 3550\\
+\cline{2-4}
+\end{tabular}
+\end{minipage}
+\begin{minipage}{0.5\textwidth}
+\caption{R2L Confusion matrix}
+\label{tab:confusion-r2l}
+\begin{tabular}{l|l|c|c|}
+\multicolumn{2}{c}{}&\multicolumn{2}{c}{Predicted}\\
+\cline{3-4}
+\multicolumn{2}{c|}{}&Other&R2L\\
+\cline{2-4}
+\multirow{2}{*}{Actual}& Other & 42961 & 431\\
+\cline{2-4}
+& R2L & 929 & 235\\
+\cline{2-4}
+\end{tabular}
+\end{minipage}
+\par\vspace{2cm}
+\begin{minipage}{\textwidth}
+\centering
+\caption{U2R Confusion matrix}
+\label{tab:confusion-u2r}
+\begin{tabular}{l|l|c|c|}
+\multicolumn{2}{c}{}&\multicolumn{2}{c}{Predicted}\\
+\cline{3-4}
+\multicolumn{2}{c|}{}&Other&U2R\\
+\cline{2-4}
+\multirow{2}{*}{Actual}& Other & 44352 & 168\\
+\cline{2-4}
+& U2R & 35 & 1\\
+\cline{2-4}
+\end{tabular}
+\end{minipage}
+\end{table}
+```
+
+# Analysis
+
+## Training Classifiers
+
+### Training Time for Binary Classifciation
+
+### Best Fit for Binary Classification
+
+### Training Time for Multi-class Classification
+
+### Best Fit for Multi-class Classification
+
+# Results
+
+## Perform Prediction for Binary Classification
+
+## Performance for Binary Classification
+
+## Perform Prediction for Multi-class Classification
+
+## Performance for Multi-class Classification
+
+# Conclusion
 
 \newpage
 

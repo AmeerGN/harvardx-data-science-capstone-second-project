@@ -26,7 +26,7 @@ step_nominalpdf <-
         id = id
       )
     )
-}
+  }
 
 step_nominalpdf_new <-
   function(terms, role, trained, ref_dist, skip, id) {
@@ -39,7 +39,7 @@ step_nominalpdf_new <-
       skip = skip,
       id = id
     )
-}
+  }
 
 prep.step_nominalpdf <- function(x, training, info = NULL, ...) {
   col_names <- recipes_eval_select(x$terms, training, info)
@@ -47,6 +47,12 @@ prep.step_nominalpdf <- function(x, training, info = NULL, ...) {
   ref_dist <- list()
   train_ln <- nrow(training)
   for (i in col_names) {
+    # For each column, table will return the count of each value
+    # to normalize that count, we divide it by the number of rows
+    # For example, if we have (a, b, a, c, d) in a column
+    # The output will be a table like this
+    #   a   b   c   d 
+    # 0.4 0.2 0.2 0.2
     ref_dist[[i]] <- table(training[, i]) / train_ln
   }
   
@@ -62,15 +68,19 @@ prep.step_nominalpdf <- function(x, training, info = NULL, ...) {
 }
 
 pdf_by_ref <- function(x, ref) {
+  # if we have the following values in ref:
+  #   a   b   c   d 
+  # 0.4 0.2 0.2 0.2
+  # And we got x = "a", the function will return 0.4
+  # if we got x = "e", the function will return 0
   ifelse(x %in% names(ref), ref[x][[1]], 0)
 }
 
 bake.step_nominalpdf <- function(object, new_data, ...) {
   require(tibble)
-  ## For illustration (and not speed), we will loop through the affected variables
-  ## and do the computations
   vars <- names(object$ref_dist)
   
+  # Transform the columns
   for(i in vars) {
     new_data[, i] <- apply(new_data[, i], 1, pdf_by_ref, ref = object$ref_dist[[i]])
   }
@@ -110,25 +120,12 @@ tidy.step_nominalpdf <- function(x, ...) {
 # if(!require(MLmetrics)) install.packages("MLmetrics", repos = "http://cran.us.r-project.org")
 # # naive_bayes method required library
 # if(!require(naivebayes)) install.packages("naivebayes", repos = "http://cran.us.r-project.org")
-# # qda method required library
-# if(!require(MASS)) install.packages("MASS", repos = "http://cran.us.r-project.org")
 # # svmLinear method required library
 # if(!require(kernlab)) install.packages("kernlab", repos = "http://cran.us.r-project.org")
-# # gamLoess method required library
-# if(!require(gam)) install.packages("gam", repos = "http://cran.us.r-project.org")
 # # mlp method required library
 # if(!require(RSNNS)) install.packages("RSNNS", repos = "http://cran.us.r-project.org")
-# # pcr method required library
-# if(!require(pls)) install.packages("pls", repos = "http://cran.us.r-project.org")
-# # AdaBoost.M1 method required library
-# if(!require(adabag)) install.packages("adabag", repos = "http://cran.us.r-project.org")
-# # kknn method required library
-# if(!require(kknn)) install.packages("kknn", repos = "http://cran.us.r-project.org")
-# # rf method required library
+# parRF method required library
 # if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
-
-# To detach any library
-# detach("package:libraryX", unload=TRUE)
 
 library(tidyverse)
 library(caret)
@@ -255,12 +252,16 @@ classifier_trained_model <- function(model_name, training_data) {
                   step_zv(all_numeric_predictors()) %>%
                   step_range(all_numeric_predictors()) %>%
                   step_nominalpdf(all_nominal_predictors())
-    cluster = makePSOCKcluster(detectCores() - 2) # Create a cluster
+    # Create a cluster
+    cluster = makePSOCKcluster(detectCores() - 2)
+    # Register the cluster
     registerDoParallel(cluster)
+    # Register the functions related to step_nominalpdf to the cluster
     clusterExport(cl=cluster, varlist=c("step_nominalpdf", "step_nominalpdf_new", "prep.step_nominalpdf", "pdf_by_ref", "bake.step_nominalpdf", "print.step_nominalpdf", "tidy.step_nominalpdf"), envir=environment())
     
     model_fit <- tryCatch({
         set.seed(123)
+        # Setting the seeds to NULL, this way caret will automatically generate the seeds for 'cv' based on the seed we set
         model_fit <- train(x = data_rec,
                            data = training_data,
                            method = model_name,
@@ -273,7 +274,7 @@ classifier_trained_model <- function(model_name, training_data) {
         return(NULL)
       },
       finally = {
-      stopCluster(cluster)
+        stopCluster(cluster)
       }
     )
   }
@@ -290,8 +291,11 @@ classifier_predict <- function(trained_model, testing_data) {
   } else {
     message(paste(model_name, "Did not find saved preds in: ", saved_pred_path))
     
-    cluster = makePSOCKcluster(detectCores() - 2) # Create a cluster
+    # Create a cluster
+    cluster = makePSOCKcluster(detectCores() - 2)
+    # Register the cluster
     registerDoParallel(cluster)
+    # Register the functions related to step_nominalpdf to the cluster
     clusterExport(cl=cluster, varlist=c("step_nominalpdf", "step_nominalpdf_new", "prep.step_nominalpdf", "pdf_by_ref", "bake.step_nominalpdf", "print.step_nominalpdf", "tidy.step_nominalpdf"), envir=environment())
     
     model_pred <- tryCatch({
