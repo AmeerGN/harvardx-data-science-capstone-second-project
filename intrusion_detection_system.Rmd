@@ -1,21 +1,17 @@
 ---
 title: "Intrusion Detection Systems (IDSs) using NSL-KDD Dataset"
 author: "Ameer Nasrallah"
-date: "01 March 2022"
+date: "`r Sys.Date()`"
 output:
   bookdown::pdf_document2:
     number_sections: true
     toc: true
-    extra_dependencies: ["float"]
+    extra_dependencies: ["flafter"]
 header-includes:
   - \usepackage[ruled,vlined,linesnumbered]{algorithm2e}
 bibliography: references.bib
 csl: ieee.csl
 ---
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
 
 \newpage
 
@@ -29,7 +25,7 @@ The goal of this project is to build two anomaly-based IDSs. The first system is
 
 We will evaluate the performance of each system using six classifiers (Recursive Partitioning, Naive Bayes, KNN, SVM, Random Forest, and Multi-Layer Perceptron), given that the data is already divided into training and testing sets (about 15% of the data). For each classifier, we will apply a tune grid search with 10-fold cross validation on the training set only to find the best tuned parameters. Then, the performance of each tuned classifier will be measured by predicting the testing set output. We will report different metrics, but we will focus mainly on three of them: overall accuracy (max), detection rates (max), and false alarm rates (min).
 
-The rest of this report is organized as follows. We will start by studying the characteristics of NSL-KDD dataset. Then, we will explain the the methodology. Then, we will analyze the training set and tune the classifiers. Then, we will use the final tuned classifiers to predict the testing set. And finally, we will conclude all the work with future improvements.
+The rest of this report is organized as follows. We will start by studying the characteristics of NSL-KDD dataset. Then, we will explain the the methodology. Then, we will analyze the training and performance of the binary classification IDS. Then, we will analyze the training and performance of the multi-class classification IDS.. And finally, we will conclude all the work.
 
 # NSL-KDD Dataset Characteristics
 
@@ -192,7 +188,16 @@ attacks_df %>% kbl(caption = "NSL-KDD Attacks Categories") %>%
 
 Figure \@ref(fig:nsl-attacks-fig) shows the distribution of normal and attack connections in NSL-KDD training and testing sets. It is clear that the training set is divided into ~50% normal connections and ~50% for the attacks. Moreover, DoS attack category is dominating the attacks the training set, while R2L and U2R attack categories have few connections. Consequently, it will be challenging to correctly classify R2L and U2R records.
 
-```{r nsl-attacks-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Distribution of Normal/Attacks in NSL-KDD Training and Testing Sets", fig.pos = "ht!", out.extra = ""}
+## Features Description
+Moreover, NSL-KDD is constructed from 41 attributes or features. These features fall into three main categories as shown in Table \@ref(tab:nsl-attrs-tab):
+
+1. Basic features: these attributes are extracted from a TCP/IP connection.
+2. Content features: these attributes are extracted from the data portion of the packet. They are very important to detect R2L and U2R attacks. This is because these attacks usually involve a single connection.
+3. Traffic features:
+    + Time-based traffic features: these attributes are extracted from connections in the past two seconds that have the same destination or same service as current connection.
+    + Connection-based traffic features: these attributes are extracted from last 100 connections that has the same destination or same service as current connection. Extracting such attributes contributes more in detecting probing attacks.
+
+```{r nsl-attacks-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Distribution of Normal/Attacks in NSL-KDD Training and Testing Sets"}
 training_multi_label <- multi_class_data$train %>%
                           select(label) %>%
                           mutate(set = "Training Set")
@@ -213,15 +218,6 @@ rbind(training_multi_label, testing_multi_label) %>%
   scale_y_continuous(labels = scales::percent) +
   labs(x = "Label", y = "Frequency")
 ```
-
-## Features Description
-Moreover, NSL-KDD is constructed from 41 attributes or features. These features fall into three main categories as shown in Table \@ref(tab:nsl-attrs-tab):
-
-1. Basic features: these attributes are extracted from a TCP/IP connection.
-2. Content features: these attributes are extracted from the data portion of the packet. They are very important to detect R2L and U2R attacks. This is because these attacks usually involve a single connection.
-3. Traffic features:
-    + Time-based traffic features: these attributes are extracted from connections in the past two seconds that have the same destination or same service as current connection.
-    + Connection-based traffic features: these attributes are extracted from last 100 connections that has the same destination or same service as current connection. Extracting such attributes contributes more in detecting probing attacks.
 
 ```{r nsl-attrs-tab, echo=FALSE, message=FALSE, warning=FALSE}
 features_df_transformer <- function(features_names, category_name) {
@@ -495,7 +491,7 @@ confusionMatrix(model_pred, testing_data$label)
 
 The effectiveness of any IDS is mainly measured by [@bamakan2016effective] [@hodo2017shallow] [@hamed2018survey]: overall accuracy, detection rate, false alarm rate, and training time. A well-performing IDS would achieve a low false alarm rate, and high accuracy and detection rate. The common way to derive the definition of these metrics is through a confusion matrix.
 
-### Metrics for Binary Classification IDS
+### Metrics for Binary Classification IDS {#binary-metrics}
 
 In a binary classification IDS, a record that is labeled as "attack" is a "Positive" record, and a record that is labeled as "normal" is a "Negative" record. Confusion matrix is a two by two matrix that represents the four possible combinations of the actual records and the predicted records.
 
@@ -542,7 +538,7 @@ Based on the confusion matrix, we can define the metrics mentioned above as foll
   (\#eq:far)
 \end{equation}
 
-### Metrics for Multi-class Classification IDS
+### Metrics for Multi-class Classification IDS {#multi-metrics}
 
 In a multi-class IDS, all metrics except overall accuracy need to be calculated per class. Therefore, we used a strategy called one-vs-rest, which treats each class as if it is the positive class that we want to detect, and the other classes are negative. We demonstrate this treatment by having an example of a 5x5 confusion matrix on NSL-KDD classes. This confusion matrix is shown in Table \@ref(tab:multi-conf-matrix).
 
@@ -799,15 +795,16 @@ classifier_predict <- function(trained_model, testing_data) {
 
 # Binary Classification IDS Analysis and Results
 
+We applied the flow proposed in Section \@ref(methodology-classifiers) to the six filters mentioned in Table \@ref(tab:classifiers-desc-tab) with the default tuning grid values from `caret` on the binary classification IDS. In this section, we will analyze the binary classification IDS training and its performance results.
+
 ```{r Train the classifiers for binary classification, echo=FALSE, message=FALSE, warning=FALSE}
 binary_class_models <- lapply(classifiers, classifier_trained_model, training_data = binary_class_data$train)
 ```
 
-We applied the flow proposed in Section \@ref(methodology-classifiers) to the six filters mentioned in Table \@ref(tab:classifiers-desc-tab) with the default tuning grid values from `caret` on the binary classification IDS. In this section, we will analyze the training time of the parameters tuning and the final model, the optimal tuned parameters, and the features importance.
-
 ## Binary Classification Training Analysis
 
-### Optimal Tuned Parameters
+Table \@ref(tab:binary-tuning-tab) shows the parameters tuning results for each classifier on the binary classification IDS. The accuracy in this table is computed as the average of the 10-folds for the best tuned parameters, it is not for the final model. Also, it is noticeable that random forest and SVM classifiers took the most significant time to tune the parameters.
+
 ```{r binary-tuning-tab, echo=FALSE, message=FALSE, warning=FALSE}
 tuning_table <- function(model) {
   return(tibble(method = model$method,
@@ -817,18 +814,16 @@ tuning_table <- function(model) {
 }
 
 bind_rows(lapply(X = binary_class_models, FUN = tuning_table)) %>%
-  kbl(caption = "Binary Classification Tuning", col.names = c("Classifier", "Parameters", "Accuracy", "Tuning Time (seconds)")) %>%
+  kbl(caption = "Binary Classification IDS Parameters Tuning", col.names = c("Classifier", "Best Tuned Parameters", "Accuracy", "Tuning Time (seconds)")) %>%
   kable_styling(latex_options = c("HOLD_position"), position = "center") %>%
   column_spec(1, border_left = T) %>%
   column_spec(4, border_right = T) %>%
   row_spec(0, bold = T)
 ```
 
-### Training Time
+Figure \@ref(fig:binary-training-times-fig) shows the training time of the best tuned binary classifiers. Again, random forest and SVM classifiers took much more time than other classifiers.
 
-Figure \@ref(fig:binary-training-times-fig) shows the training times of the best tuned binary classifiers. 
-
-```{r binary-training-times-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Training Time of Best Tuned Binary Classifiers", fig.pos = "ht!", out.extra = ""}
+```{r binary-training-times-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Training Time of Best Tuned Binary Classifiers", fig.width=6, fig.height=4}
 times_transformer <- function(model) {
     return(tibble("classifier" = model$method, "everything" = model$times$everything[[3]], "final" = model$times$final[[3]]))
 }
@@ -838,20 +833,23 @@ binary_classifiers_times %>%
   geom_bar(stat = "identity") +
   geom_label(aes(label = sprintf('%0.5f', final))) +
   scale_y_log10() +
-  labs(title = "Training Time of Best Tuned Binary Classifiers", x = "Classifier", y = "Time (seconds)")
+  labs(x = "Classifier", y = "Time (seconds)")
 ```
 
-### Features Importance
+Some classifiers such as recursive partitioning `rpart` and random forest `parRF` classifiers have built-in feature importance calculation. Figures \@ref(fig:binary-var-rpart) and \@ref(fig:binary-var-rf) show the top five important features for `rpart` and `parRF` respectively. They actually share the same top feature which is `src_bytes`. But `rpart` gave more importance to other features as well although they are less important in `parRF`, such as `dest_bytes`.
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "T", fig.pos = "ht!", out.extra = ""}
+```{r binary-var-rpart, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Feature Importance for Binary Classification using rpart", fig.width=4, fig.height=4}
 ggplot(varImp(binary_class_models[[1]]), top = 5)
 ```
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "T", fig.pos = "ht!", out.extra = ""}
+```{r binary-var-rf, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Feature Importance for Binary Classification using parRF", fig.width=4, fig.height=4}
 ggplot(varImp(binary_class_models[[5]]), top = 5)
 ```
 
 ## Binary Classification Performance
+
+We computed the metrics mentioned in Section \@ref(binary-metrics) using `confusionMatrix`. The accuracy of the binary classification IDS is shown in Figure \@ref(fig:binary-acc-fig). It is clear that `naive_bayes` had the worst performance with an accuracy of about 68%, while `parRF` had the best performance with an accuracy of about 79.8%. The other classifiers achieved almost the same accuracy as `parRF`.
+
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 binary_class_preds <- lapply(binary_class_models, classifier_predict, testing_data = binary_class_data$test)
 
@@ -867,73 +865,83 @@ binary_metrics <- data.frame(bind_rows(lapply(X = seq_along(classifiers), FUN = 
         mutate(detection_rate = TP / (TP + FN),  far = FP / (FP + TN))
 ```
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+```{r binary-acc-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Accuracy of Binary Classfication classifiers", fig.width=6, fig.height=4}
 binary_metrics %>%
   ggplot(aes(x = classifier, y = accuracy)) +
   geom_bar(stat = "identity") +
-  geom_label(aes(label = sprintf('%0.5f', accuracy), fontface = ifelse(accuracy == max(accuracy), 2, 1)), vjust = "inward")
+  geom_label(aes(label = sprintf('%0.5f', accuracy), fontface = ifelse(accuracy == max(accuracy), 2, 1)), vjust = "inward") +
+  labs(x = "Classifier", y = "Accuracy")
 ```
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+In terms of the False Alarm Rate (FAR), Figure \@ref(fig:binary-far-fig) shows that `mlp` had the worst highest FAR of about 7.58%, while `naive_bayes` had the best lowest FAR of about 0.175% (but with low accuracy). Worths mentioning that `parRF` had the second lowest FAR of about 3.007% while achieving the highest accuracy at the same time.
+
+```{r binary-far-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="False Alarm Rate (FAR) of Binary Classfication classifiers", fig.width=6, fig.height=4}
 binary_metrics %>%
   ggplot(aes(x = classifier, y = far)) +
   geom_bar(stat = "identity") +
-  geom_label(aes(label = sprintf('%0.5f', far), fontface = ifelse(far == invoke(pmin, na_if(far, 0), na.rm = TRUE), 2, 1)), vjust = "inward")
+  geom_label(aes(label = sprintf('%0.5f', far), fontface = ifelse(far == invoke(pmin, na_if(far, 0), na.rm = TRUE), 2, 1)), vjust = "inward") +
+  labs(x = "Classifier", "False Alarm Rate (FAR)")
 ```
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+In terms of the Detection Rate (DR), Figure \@ref(fig:binary-dr-fig) shows that `naive_bayes` had the worst DR of about 44.21%, while `parRF` had the highest DR of about 66.7%.
+
+```{r binary-dr-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Detection Rate (DR) of Binary Classfication classifiers", fig.width=6, fig.height=4}
 binary_metrics %>%
   ggplot(aes(x = classifier, y = detection_rate)) +
   geom_bar(stat = "identity") +
-  geom_label(aes(label = sprintf('%0.5f', detection_rate), fontface = ifelse(detection_rate == max(detection_rate), 2, 1)), vjust = "inward")
+  geom_label(aes(label = sprintf('%0.5f', detection_rate), fontface = ifelse(detection_rate == max(detection_rate), 2, 1)), vjust = "inward") +
+  labs(x = "Classifier", "Detection Rate (DR")
 ```
 
-Sensitivity is same as detection rate, and recall
+Overall, the best classifier for binary classification IDS is Random Forest `parRF` as it achieved a reasonable balance between accuracy, FAR and DR. The only difficulty with `parRF` is that it takes long amount of time to train the model.
 
 # Multi-class Classification IDS Analysis and Results
+
+We applied the flow proposed in Section \@ref(methodology-classifiers) to the six filters mentioned in Table \@ref(tab:classifiers-desc-tab) with the default tuning grid values from `caret` on the multi-class classification IDS.  In this section, we will analyze the multi-class classification IDS training and its performance results.
 
 ```{r Train the classifiers for multi-class classification, echo=FALSE, message=FALSE, warning=FALSE}
 multi_class_models <- lapply(classifiers, classifier_trained_model, training_data = multi_class_data$train)
 ```
 
-We applied the flow proposed in Section \@ref(methodology-classifiers) to the six filters mentioned in Table \@ref(tab:classifiers-desc-tab) with the default tuning grid values from `caret` on the multi-class classification IDS. In this section, we will analyze the training time of the parameters tuning and the final model, the optimal tuned parameters, and the features importance.
-
 ## Multi-class Classification Training Analysis
 
-### Training Time
-
-```{r multi-training-times-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Training Time of Best Tuned Multi-class Classifiers", fig.pos = "ht!", out.extra = ""}
-multi_classifiers_times <- bind_rows(lapply(X = multi_class_models, FUN = times_transformer))
-multi_classifiers_times %>%
-  ggplot(aes(x = classifier, y = final)) +
-  geom_bar(stat = "identity") +
-  geom_label(aes(label = sprintf('%0.5f', final))) +
-  scale_y_log10() +
-  labs(title = "Training Time of Best Tuned Multi-class Classifiers", x = "Classifier", y = "Time (seconds)")
-```
-
-### Optimal Tuned Parameters
+Table \@ref(tab:multi-tuning-tab) shows the parameters tuning results for each classifier on the multi-class classification IDS. The accuracy in this table is computed as the average of the 10-folds for the best tuned parameters, it is not for the final model. Similar to the binary classification IDS, `parRF` and `svmLinear` took much more time than other classifiers.
 
 ```{r multi-tuning-tab, echo=FALSE, message=FALSE, warning=FALSE}
 bind_rows(lapply(X = multi_class_models, FUN = tuning_table)) %>%
-  kbl(caption = "Multi-class Classification Tuning", col.names = c("Classifier", "Parameters", "Accuracy", "Tuning Time (seconds)")) %>%
+  kbl(caption = "Multi-class Classification Tuning", col.names = c("Classifier", "Best Tuned Parameters", "Accuracy", "Tuning Time (seconds)")) %>%
   kable_styling(latex_options = c("HOLD_position"), position = "center") %>%
   column_spec(1, border_left = T) %>%
   column_spec(4, border_right = T) %>%
   row_spec(0, bold = T)
 ```
 
-### Features Importance
+Figure \@ref(fig:multi-training-times-fig) shows the training time of the best tuned multi-class classifiers. Also here, random forest and SVM classifiers took much more time than other classifiers. Overall the training time of each classifier in multi-class classification is almost the same as binary classification time.
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "T", fig.pos = "ht!", out.extra = ""}
+```{r multi-training-times-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Training Time of Best Tuned Multi-class Classifiers", fig.width=6, fig.height=4}
+multi_classifiers_times <- bind_rows(lapply(X = multi_class_models, FUN = times_transformer))
+multi_classifiers_times %>%
+  ggplot(aes(x = classifier, y = final)) +
+  geom_bar(stat = "identity") +
+  geom_label(aes(label = sprintf('%0.5f', final))) +
+  scale_y_log10() +
+  labs(x = "Classifier", y = "Time (seconds)")
+```
+
+Figures \@ref(fig:multi-var-rpart) and \@ref(fig:multi-var-rf) show the top five important features for `rpart` and `parRF` respectively. In this case, the order of important features is a bit different between `rpart` and `parRF`.
+
+```{r multi-var-rpart, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Feature Importance for Multi-class Classification using rpart", fig.width=4, fig.height=4}
 ggplot(varImp(multi_class_models[[1]]), top = 5)
 ```
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "T", fig.pos = "ht!", out.extra = ""}
+```{r multi-var-rf, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Feature Importance for Binary Classification using parRF", fig.width=4, fig.height=4}
 ggplot(varImp(multi_class_models[[5]]), top = 5)
 ```
 
 ## Multi-class Classification Performance
+
+We computed the metrics mentioned in Section \@ref(multi-metrics) using `confusionMatrix`. The accuracy of the multi-class classification IDS is shown in Figure \@ref(fig:multi-acc-fig). It is clear that `naive_bayes` had the worst performance with an accuracy of about 52.46%, while `parRF` had the best performance with an accuracy of about 76.67%. The other classifiers achieved almost the same accuracy as `parRF`. Moreover, the accuracy of each classiffier in multi-class classification is less than its value in binary classification. This gives an indication that it is usually harder to build a multi-class classification IDS.
+
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 multi_class_preds <- lapply(multi_class_models, classifier_predict, testing_data = multi_class_data$test)
 
@@ -959,35 +967,53 @@ metrics_calculator <- function(idx) {
     return(bind_rows(lapply(X = c("X1", "X2", "X3", "X4", "X5"), FUN = metric)))
 }
 multi_metrics <- data.frame(bind_rows(lapply(X = seq_along(classifiers), FUN = metrics_calculator))) %>%
+        mutate(multi_label = case_when(class == "X1" ~ "U2R",
+                                  class == "X2" ~ "R2L",
+                                  class == "X3" ~ "Probing",
+                                  class == "X4" ~ "DoS",
+                                  class == "X5" ~ "Normal")) %>%
         mutate(detection_rate = TP / (TP + FN),  far = FP / (FP + TN)) %>%
-        group_by(class) %>%
+        group_by(multi_label) %>%
         mutate(max_dr = max(detection_rate), min_far = invoke(pmin, na_if(far, 0), na.rm = TRUE))
 ```
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+```{r multi-acc-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Accuracy of Multi-class Classfication classifiers", fig.width=6, fig.height=4}
 multi_acc %>%
   ggplot(aes(x = classifier, y = accuracy)) +
   geom_bar(stat = "identity") +
-  geom_label(aes(label = sprintf('%0.5f', accuracy), fontface = ifelse(accuracy == max(accuracy), 2, 1)), vjust = "inward")
+  geom_label(aes(label = sprintf('%0.5f', accuracy), fontface = ifelse(accuracy == max(accuracy), 2, 1)), vjust = "inward") +
+  labs(x = "Classifier", y = "Accuracy")
 ```
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+Figure \@ref(fig:multi-far-fig) shows the FAR for each classifier per attack type. In general, `rpart` has the worst FAR for all attacks. While, `naive_bayes` and `parRF` have the best FARs especially ffor DoS and Probing attacks. The FAR of R2L and U2R attacks is low (near zero) because they do not have a lot of samples.
+
+```{r multi-far-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="False Alarm Rate (FAR) of Multi-class Classfication classifiers", fig.width=7, fig.height=4}
 multi_metrics %>%
+  filter(multi_label != "Normal") %>%
   ggplot(aes(x = classifier, y = far)) +
   geom_bar(stat = "identity") +
   geom_label(aes(label = sprintf('%0.5f', far), fontface = ifelse(far == min_far, 2, 1)), vjust = "inward") +
-  facet_grid(class~.)
+  facet_grid(multi_label~.) +
+  labs(x = "Classifier", y = "False Alarm Rate (FAR)")
 ```
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+Figure \@ref(fig:multi-dr-fig) shows the DR for each classifier per attack type. In general, `naive_bayes` has the worst DR for all attacks. For DoS, most of the classifiers perform almost the same with some preference for `parRF`. For Probing, `parRF` performed much better than other classifiers. For R2L and U2R, it is really difficult to achieve a good DR because of the low number of samples in the training set.
+
+```{r multi-dr-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="Detection Rate (DR) of Multi-class Classfication classifiers", fig.width=7, fig.height=4}
 multi_metrics %>%
+  filter(multi_label != "Normal") %>%
   ggplot(aes(x = classifier, y = detection_rate)) +
   geom_bar(stat = "identity") +
   geom_label(aes(label = sprintf('%0.5f', detection_rate), fontface = ifelse(detection_rate == max_dr, 2, 1)), vjust = "inward") +
-  facet_grid(class~.)
+  facet_grid(multi_label~.) +
+  labs(x = "Classifier", y = "Detection Rate (DR)")
 ```
 
+Overall, the best classifier for multi-class classification IDS is also Random Forest `parRF` as it achieved a reasonable balance between accuracy, FAR and DR across all attacks.
+
 # Conclusion
+
+Two IDSs systems were built using NSL-KDD dataset and six different classifiers. The first system was a binary classification IDS where the system predicts if a TCP connection is normal or attack. The best performing classifier for the first system was Random Forest with an accuracy of about 79.8%, a false alarm system of about 3.007%, and a detection rate of about 66.7%. The second system was a multi-class classification IDS where the system predicts if a TCP connection is one of (normal, DoS, Probing, R2L, or  U2R). The best performing classifier for the second system was also Random Forest with an accuracy of about 76.67%, and a reasonable false alarm rate and detection rate for DoS and Probing attacks.
 
 \newpage
 
