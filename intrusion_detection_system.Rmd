@@ -183,7 +183,7 @@ u2r_attacks = c("buffer_overflow", "loadmodule", "perl", "rootkit", "ps", "sqlat
 attacks_categories <- c(paste(dos_attacks, collapse = ", "), paste(probing_attacks, collapse = ", "), paste(r2l_attacks, collapse = ", "), paste(u2r_attacks, collapse = ", "))
 attacks_df <- data.frame(c("DoS", "Probing", "R2L", "U2R"), attacks_categories)
 colnames(attacks_df) <- c("Attack Category", "Attacks Included")
-kbl(attacks_df, caption = "NSL-KDD Attacks Categories") %>%
+attacks_df %>% kbl(caption = "NSL-KDD Attacks Categories") %>%
   kable_styling(latex_options = c("HOLD_position"), position = "center") %>%
   column_spec(1, border_left = T) %>%
   column_spec(2, width = "30em",border_right = T) %>%
@@ -226,9 +226,13 @@ Moreover, NSL-KDD is constructed from 41 attributes or features. These features 
 ```{r nsl-attrs-tab, echo=FALSE, message=FALSE, warning=FALSE}
 features_df_transformer <- function(features_names, category_name) {
   custom_col_summary <- function(col) {
-    return(c("Type" = class(col), "Range or Values" = ifelse(is.numeric(col), paste(min(col), max(col), sep = ifelse(length(unique(col)) == 2, ",", "-")), paste(unique(col), collapse = ", "))))
+    # if the column is not numeric, then we will print all its unique values separated by a comma
+    # if the column is numeric and has only two values, we will print those values separated by a comma
+    # if the column is numeric and has many values, we will print it as min-max
+    return(tibble("Type" = class(col), "Range or Values" = ifelse(is.numeric(col), paste(min(col), max(col), sep = ifelse(length(unique(col)) == 2, ",", "-")), paste(unique(col), collapse = ", "))))
   }
-  df <- cbind("Category" = replicate(length(features_names), category_name), tibble::rownames_to_column(data.frame(t(as.data.frame(lapply(X = nsl_kdd_train_csv[, features_names], FUN = custom_col_summary)))), "Feature"))
+  # we replicated the category to use it in collapse_rows in kbl
+  df <- cbind("Category" = replicate(length(features_names), category_name), "Feature" = features_names, bind_rows(lapply(X = nsl_kdd_train_csv[, features_names], FUN = custom_col_summary)))
   df
 }
   
@@ -238,7 +242,7 @@ time_based_traffic_df <- features_df_transformer(time_based_traffic_features, "T
 host_based_traffic_df <- features_df_transformer(host_based_traffic_features, "Connection-based traffic features")
 atts_df <- rbind(basic_df, content_df, time_based_traffic_df, host_based_traffic_df)
 
-kbl(atts_df, caption = "NSL-KDD Attributes", col.names = c("Category", "Feature", "Type", "Range/Values"), centering = F) %>%
+atts_df %>% kbl(caption = "NSL-KDD Attributes", col.names = c("Category", "Feature", "Type", "Range/Values"), centering = F) %>%
     kable_styling(position = "left", latex_options = c("HOLD_position")) %>%
     column_spec(1, width = "4.8em", border_left = T) %>%
     column_spec(2, width = "13.5em") %>%
@@ -291,11 +295,12 @@ step_zv(all_numeric_predictors())
 
 ### Normalize Numerical Features using Min-Max
 
-Another important step before working with classification algorithms is to normalize numeric features. Normalizing a feature means to scale its values to fall into a smaller range. For example, there are features in NSL-KDD dataset that have wide range of values, such as: `duration`, `src_bytes` and `num_root`. While there are other features that have smaller range of values, such as: `num_failed_logins`, `is_host_login`, and `srv_count`. Keeping the features without normalization may cause biasing towards selecting wide range features which may also affect classification performance. To prevent this dominance, we chose to scale all the numeric features to fall in the range of 0-1 using min-max normalization. Min-max scaling is shown in the following equation, where $x$ is the value to be scaled in feature $X$, $MinMax(x)$ is the scaled value of $x$, $Min(X)$ and $Max(X)$ are the minimum and maximum values respectively in feature $X$, $min$ and $max$ are the boundaries of the new range.
+Another important step before working with classification algorithms is to normalize numeric features. Normalizing a feature means to scale its values to fall into a smaller range. For example, there are features in NSL-KDD dataset that have wide range of values, such as: `duration`, `src_bytes` and `num_root`. While there are other features that have smaller range of values, such as: `num_failed_logins`, `is_host_login`, and `srv_count`. Keeping the features without normalization may cause biasing towards selecting wide range features which may also affect classification performance. To prevent this dominance, we chose to scale all the numeric features to fall in the range of 0-1 using min-max normalization. Min-max scaling is shown in Equation \@ref(eq:minmax), where $x$ is the value to be scaled in feature $X$, $MinMax(x)$ is the scaled value of $x$, $Min(X)$ and $Max(X)$ are the minimum and maximum values respectively in feature $X$, $min$ and $max$ are the boundaries of the new range.
 
-$$
-    MinMax(x) = min + (max - min)(\frac{x - Min(X)}{Max(X) - Min(X)})
-$$
+\begin{equation} 
+  MinMax(x) = min + (max - min)(\frac{x - Min(X)}{Max(X) - Min(X)})
+  (\#eq:minmax)
+\end{equation} 
 
 To apply normalizing numerical features, we used `step_range` function from `recipes` package. This is an example of how to use `step_range`.
 
@@ -307,11 +312,12 @@ step_range(all_numeric_predictors())
 
 Many classification algorithms are mathematical-based. Therefore, it is important to transform the nominal features of a dataset into their numerical representation. NSL-KDD dataset has three nominal features (as stated in Table \@ref(tab:nsl-attrs-tab)): `protocol_type`, `service`, and `flag`.
 
-To avoid biasing the data, we did not encode the data with a static value map (e.g. http takes 1, smtp takes 2, and so on). Rather, we applied probability density function as in the equation below [@seth2016intrusion] such that the most frequent nominal value in a column takes the highest numerical value while still being bounded between 0 and 1. This range goes along with the numerical features normalization.
+To avoid biasing the data, we did not encode the data with a static value map (e.g. http takes 1, smtp takes 2, and so on). Rather, we applied probability density function as in Equation \@ref(eq:pdf) [@seth2016intrusion] such that the most frequent nominal value in a column takes the highest numerical value while still being bounded between 0 and 1. This range goes along with the numerical features normalization.
 
-$$
-PDF(x) = \frac{occur(x)}{n}
-$$
+\begin{equation} 
+  PDF(x) = \frac{occur(x)}{n}
+  (\#eq:pdf)
+\end{equation} 
 
 where $occur(x)$ is the number of occurrences of value $x$ within a column, and $n$ is the total number of records.
 
@@ -431,7 +437,7 @@ This is an example of how to use `step_nominalpdf`.
 step_nominalpdf(all_nominal_predictors())
 ```
 
-## Classifiers
+## Classifiers {#methodology-classifiers}
 
 In order to perform classification, we used `caret` package [@max2021caret] which provides predefined classification algorithms in a convenient way. Table \@ref(tab:classifiers-desc-tab) summarizes the classifiers we used indicating the name of the classifier in `caret` along with its original package (which can be `caret` itself as for `knn`).
 
@@ -443,7 +449,7 @@ In order to perform classification, we used `caret` package [@max2021caret] whic
 ```{r classifiers-desc-tab, echo=FALSE, message=FALSE, warning=FALSE}
 classifiers_desc <- data.frame(c("Recursive Partitioning", "Naive Bayes", "KNN", "SVM", "Random Forest", "Multi-Layer Perceptron"), c("rpart", "naive_bayes", "knn", "svmLinear", "parRF", "mlp"), c("rpart::rpart (ref:terry2019Rpart)", "naivebayes::naive_bayes (ref:michal2019naivebayes)", "caret::knn3", "kernlab::ksvm (ref:alexandros2004kernlab)", "randomForest::randomForest (ref:andy2002rf)", "RSNNS::mlp (ref:christoph2012mlp)"), c("cp", "laplace, usekernel, adjust", "k", "C", "mtry", "size"))
 
-kbl(classifiers_desc, caption = "Classifiers Description", col.names = c("Classifier Name", "Caret Name", "Package::Function", "Parameters")) %>%
+classifiers_desc %>% kbl(caption = "Classifiers Description", col.names = c("Classifier Name", "Caret Name", "Package::Function", "Parameters")) %>%
     kable_styling(latex_options = c("HOLD_position")) %>%
     column_spec(1, border_left = T) %>%
     column_spec(4, border_right = T) %>%
@@ -470,11 +476,19 @@ clusterExport(cl=cluster, varlist=c("step_nominalpdf", "step_nominalpdf_new",
                                   "tidy.step_nominalpdf"), envir=environment())
 set.seed(123)
 # Train KNN on NSL-KDD data taking the recipe as input (default k for cv is 10)
+# Use the default tune grid values for k (the tuning parameter of knn)
 model_fit <- train(x = data_rec,
                data = nsl_training_data,
                method = "knn",
                trControl = trainControl(method = 'cv'))
 stopCluster(cluster)
+```
+
+Also, `caret` supports convenient abstract way to perform prediction and compute the confusion matrix such as the following example.
+
+```{r Example on the prediction using caret, eval=FALSE}
+model_pred <- predict(trained_model, testing_data)
+confusionMatrix(model_pred, testing_data$label)
 ```
 
 ## Evaluation Metrics
@@ -512,26 +526,21 @@ Table \@ref(tab:confusion) shows a confusion matrix where:
 
 Based on the confusion matrix, we can define the metrics mentioned above as follows:
 
-* Overall Accuracy: is the percent of correctly classified records. It is calculated by:
-$$
-    Overall Accuracy = \frac{TN + TP}{TN + FP + FN + TP}
-$$
-* Detection Rate (DR): also called Recall or sensitivity or true positive rate (TPR). It is the percent of correctly classified attacks to the total number of actual attacks. When it is near 1, it means that the classifier performed well in predicting almost all actual attacks. It is calculated by:
-$$
-    Detection Rate (DR) = \frac{TP}{TP + FN}
-$$
-* False Alarm Rate (FAR): also called False Positive Rate (FPR). It is the percentage of wrongly classified normal records. When it is near zero, it means that the classifier performed well in avoiding misprediction of almost all normal records. It is calculated by:
-$$
-    FAR = \frac{FP}{FP + TN}
-$$
-
-Another two well-known metrics that can be calculated from confusion matrix are Prediction and F1. They are calculated as following:
-$$
-    Precision = \frac{TP}{TP + FP}
-$$
-$$
-    F1 = \frac{2TP}{2TP + FP + FN}
-$$
+* Overall Accuracy: is the percent of correctly classified records. It is calculated by Equation \@ref(eq:accuracy).
+\begin{equation} 
+  \text{Overall Accuracy} = \frac{TN + TP}{TN + FP + FN + TP}
+  (\#eq:accuracy)
+\end{equation}
+* Detection Rate (DR): also called Recall or sensitivity or true positive rate (TPR). It is the percent of correctly classified attacks to the total number of actual attacks. When it is near 1, it means that the classifier performed well in predicting almost all actual attacks. It is calculated by Equation \@ref(eq:dr).
+\begin{equation} 
+  \text{Detection Rate (DR)} = \frac{TP}{TP + FN}
+  (\#eq:dr)
+\end{equation}
+* False Alarm Rate (FAR): also called False Positive Rate (FPR). It is the percentage of wrongly classified normal records. When it is near zero, it means that the classifier performed well in avoiding misprediction of almost all normal records. It is calculated by Equation \@ref(eq:far).
+\begin{equation} 
+  \text{FAR} = \frac{FP}{FP + TN}
+  (\#eq:far)
+\end{equation}
 
 ### Metrics for Multi-class Classification IDS
 
@@ -564,52 +573,52 @@ In a multi-class IDS, all metrics except overall accuracy need to be calculated 
 We will break this confusion matrix into 5 smaller matrices each of size 2x2. Tables \@ref(tab:confusion-normal)-\@ref(tab:confusion-u2r) show the resulting confusion matrices for each class in NSL-KDD. And now, we can easily calculate the metrics as follows:
 
 * Overall Accuracy:
-$$
+\begin{equation*} 
 \frac{21761 + 14535 + 3550 + 235 + 1}{44556}=\frac{40082}{44556}=0.8996
-$$
+\end{equation*}
 * Normal DR:
-$$
+\begin{equation*} 
 \frac{21761}{21761 + 1356}=\frac{21761}{23117}=0.9413
-$$
+\end{equation*}
 * DoS DR: 
-$$
+\begin{equation*} 
 \frac{14535}{14535 + 1481}=\frac{14535}{16016}=0.9075
-$$
+\end{equation*}
 * Probing DR:
-$$
+\begin{equation*} 
 \frac{3550}{3550 + 673}=\frac{3550}{4223}=0.8407
-$$
+\end{equation*}
 * R2L DR:
-$$
+\begin{equation*} 
 \frac{235}{235 + 929}=\frac{235}{1164}=0.2019
-$$
+\end{equation*}
 * U2R DR:
-$$
+\begin{equation*} 
 \frac{1}{1 + 35}=\frac{1}{36}=0.0278
-$$
+\end{equation*}
 * Normal FAR:
-$$
+\begin{equation*} 
 \frac{2355}{2355 + 19084}=\frac{2355}{21439}=0.1098
-$$
+\end{equation*}
 * DoS FAR:
-$$
+\begin{equation*} 
 \frac{436}{436 + 28104}=\frac{436}{28540}=0.0153
-$$
+\end{equation*}
 * Probing FAR:
-$$
+\begin{equation*} 
 \frac{1084}{1084 + 39249}=\frac{1084}{40333}=0.0269
-$$
+\end{equation*}
 * R2L FAR:
-$$
+\begin{equation*} 
 \frac{431}{431 + 42961}=\frac{431}{43392}=0.0099
-$$
+\end{equation*}
 * U2R FAR:
-$$
+\begin{equation*} 
 \frac{168}{168 + 44352}=\frac{168}{44520}=0.0037
-$$
+\end{equation*}
 
 ```{=latex}
-\begin{table}[ht]
+\begin{table}[!ht]
 \begin{minipage}{0.5\textwidth}
 \caption{Normal Confusion matrix}
 \label{tab:confusion-normal}
@@ -686,27 +695,297 @@ $$
 \end{table}
 ```
 
-# Analysis
+```{r Classifiers definition and training and prediction functions, echo=FALSE, message=FALSE, warning=FALSE}
+classifiers <- c("rpart", "naive_bayes", "knn", "svmLinear", "parRF", "mlp")
 
-## Training Classifiers
+classifier_trained_model <- function(model_name, training_data) {
+  message(paste(model_name, length(levels(training_data$label))))
+  suffix <- ifelse(length(levels(training_data$label)) == 2, "binary", "multi")
+  saved_model_path <- paste("data/", paste(model_name, suffix, "fit", sep = "_"), ".rds", sep = "")
+  if (file.exists(saved_model_path)) {
+    message(paste(model_name, "Reading already trained model from:", saved_model_path))
+    model_fit <- readRDS(saved_model_path)
+  } else {
+    message(paste(model_name, "Did not find a saved model in: ", saved_model_path))
+    data_rec <- recipe(label ~ ., data = training_data) %>%
+                  step_zv(all_numeric_predictors()) %>%
+                  step_range(all_numeric_predictors()) %>%
+                  step_nominalpdf(all_nominal_predictors())
+    # Create a cluster
+    cluster = makePSOCKcluster(detectCores() - 2)
+    # Register the cluster
+    registerDoParallel(cluster)
+    # Register the functions related to step_nominalpdf to the cluster
+    clusterExport(cl=cluster, varlist=c("step_nominalpdf", "step_nominalpdf_new", "prep.step_nominalpdf", "pdf_by_ref", "bake.step_nominalpdf", "print.step_nominalpdf", "tidy.step_nominalpdf"), envir=environment())
+    
+    model_fit <- tryCatch({
+        set.seed(123)
+        # Setting the seeds to NULL, this way caret will automatically generate the seeds for 'cv' based on the seed we set
+        # Use the default tune grid values offered from caret for each classifier
+        model_fit <- train(x = data_rec,
+                           data = training_data,
+                           method = model_name,
+                           trControl = trainControl(method = 'cv', seeds = NULL, summaryFunction = multiClassSummary, classProbs = TRUE))
+        saveRDS(model_fit, saved_model_path)
+        model_fit
+      },
+      error = function(cond) {
+        message(paste(model_name, "Here's the original error message:", cond))
+        return(NULL)
+      },
+      finally = {
+        stopCluster(cluster)
+      }
+    )
+  }
+  return(model_fit)
+}
 
-### Training Time for Binary Classifciation
+classifier_predict <- function(trained_model, testing_data) {
+  model_name <- trained_model$method
+  suffix <- ifelse(length(levels(testing_data$label)) == 2, "binary", "multi")
+  saved_pred_path <- paste("data/", paste(model_name, suffix, "preds", sep = "_"), ".rds", sep = "")
+  if (file.exists(saved_pred_path)) {
+    message(paste(model_name, "Reading already predicted values from:", saved_pred_path))
+    model_pred <- readRDS(saved_pred_path)
+  } else {
+    message(paste(model_name, "Did not find saved preds in: ", saved_pred_path))
+    
+    # Create a cluster
+    cluster = makePSOCKcluster(detectCores() - 2)
+    # Register the cluster
+    registerDoParallel(cluster)
+    # Register the functions related to step_nominalpdf to the cluster
+    clusterExport(cl=cluster, varlist=c("step_nominalpdf", "step_nominalpdf_new", "prep.step_nominalpdf", "pdf_by_ref", "bake.step_nominalpdf", "print.step_nominalpdf", "tidy.step_nominalpdf"), envir=environment())
+    
+    model_pred <- tryCatch({
+        set.seed(123)
+        if (model_name == "naive_bayes") {
+          library(naivebayes)
+        } else if (model_name == "parRF") {
+          library(randomForest)
+        } else {
+          library(caret)
+        }
+        model_pred <- predict(trained_model, testing_data)
+        saveRDS(model_pred, saved_pred_path)
+        model_pred
+      },
+      error = function(cond) {
+        message(paste(model_name, "Here's the original error message:", cond))
+        return(NULL)
+      },
+      finally = {
+        stopCluster(cluster)
+      }
+    )
+  }
+  if (!is.null(model_pred)) {
+    CM <- tryCatch({
+        confusionMatrix(model_pred, testing_data$label)
+      },
+      error = function(cond) {
+        message(paste(model_name, "Here's the original error message:", cond))
+        return(NULL)
+      }
+    )
+    return(CM)
+  }
+  return(NULL)
+}
+```
 
-### Best Fit for Binary Classification
+\newpage
 
-### Training Time for Multi-class Classification
+# Binary Classification IDS Analysis and Results
 
-### Best Fit for Multi-class Classification
+```{r Train the classifiers for binary classification, echo=FALSE, message=FALSE, warning=FALSE}
+binary_class_models <- lapply(classifiers, classifier_trained_model, training_data = binary_class_data$train)
+```
 
-# Results
+We applied the flow proposed in Section \@ref(methodology-classifiers) to the six filters mentioned in Table \@ref(tab:classifiers-desc-tab) with the default tuning grid values from `caret` on the binary classification IDS. In this section, we will analyze the training time of the parameters tuning and the final model, the optimal tuned parameters, and the features importance.
 
-## Perform Prediction for Binary Classification
+## Binary Classification Training Analysis
 
-## Performance for Binary Classification
+### Optimal Tuned Parameters
+```{r binary-tuning-tab, echo=FALSE, message=FALSE, warning=FALSE}
+tuning_table <- function(model) {
+  return(tibble(method = model$method,
+             parameters = paste(paste(colnames(model$bestTune), model$bestTune, sep = " = "), collapse = ", "),
+             accuracy = model$results[rownames(model$bestTune), c("Accuracy")],
+             tuning = model$times$everything[[3]] - model$times$final[[3]]))
+}
 
-## Perform Prediction for Multi-class Classification
+bind_rows(lapply(X = binary_class_models, FUN = tuning_table)) %>%
+  kbl(caption = "Binary Classification Tuning", col.names = c("Classifier", "Parameters", "Accuracy", "Tuning Time (seconds)")) %>%
+  kable_styling(latex_options = c("HOLD_position"), position = "center") %>%
+  column_spec(1, border_left = T) %>%
+  column_spec(4, border_right = T) %>%
+  row_spec(0, bold = T)
+```
 
-## Performance for Multi-class Classification
+### Training Time
+
+Figure \@ref(fig:binary-training-times-fig) shows the training times of the best tuned binary classifiers. 
+
+```{r binary-training-times-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Training Time of Best Tuned Binary Classifiers", fig.pos = "ht!", out.extra = ""}
+times_transformer <- function(model) {
+    return(tibble("classifier" = model$method, "everything" = model$times$everything[[3]], "final" = model$times$final[[3]]))
+}
+binary_classifiers_times <- bind_rows(lapply(X = binary_class_models, FUN = times_transformer))
+binary_classifiers_times %>%
+  ggplot(aes(x = classifier, y = final)) +
+  geom_bar(stat = "identity") +
+  geom_label(aes(label = sprintf('%0.5f', final))) +
+  scale_y_log10() +
+  labs(title = "Training Time of Best Tuned Binary Classifiers", x = "Classifier", y = "Time (seconds)")
+```
+
+### Features Importance
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "T", fig.pos = "ht!", out.extra = ""}
+ggplot(varImp(binary_class_models[[1]]), top = 5)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "T", fig.pos = "ht!", out.extra = ""}
+ggplot(varImp(binary_class_models[[5]]), top = 5)
+```
+
+## Binary Classification Performance
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+binary_class_preds <- lapply(binary_class_models, classifier_predict, testing_data = binary_class_data$test)
+
+binary_metrics_tibble <- function(idx) {
+    cls_TP <- binary_class_preds[[idx]]$table[1,1]
+    cls_FP <- binary_class_preds[[idx]]$table[1,2]
+    cls_FN <- binary_class_preds[[idx]]$table[2,1]
+    cls_TN <- binary_class_preds[[idx]]$table[2,2]
+    return(tibble(classifier = classifiers[idx], accuracy = binary_class_preds[[idx]]$overall["Accuracy"][[1]], TP = cls_TP, FP = cls_FP, FN = cls_FN, TN = cls_TN))
+}
+
+binary_metrics <- data.frame(bind_rows(lapply(X = seq_along(classifiers), FUN = binary_metrics_tibble))) %>%
+        mutate(detection_rate = TP / (TP + FN),  far = FP / (FP + TN))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+binary_metrics %>%
+  ggplot(aes(x = classifier, y = accuracy)) +
+  geom_bar(stat = "identity") +
+  geom_label(aes(label = sprintf('%0.5f', accuracy), fontface = ifelse(accuracy == max(accuracy), 2, 1)), vjust = "inward")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+binary_metrics %>%
+  ggplot(aes(x = classifier, y = far)) +
+  geom_bar(stat = "identity") +
+  geom_label(aes(label = sprintf('%0.5f', far), fontface = ifelse(far == invoke(pmin, na_if(far, 0), na.rm = TRUE), 2, 1)), vjust = "inward")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+binary_metrics %>%
+  ggplot(aes(x = classifier, y = detection_rate)) +
+  geom_bar(stat = "identity") +
+  geom_label(aes(label = sprintf('%0.5f', detection_rate), fontface = ifelse(detection_rate == max(detection_rate), 2, 1)), vjust = "inward")
+```
+
+Sensitivity is same as detection rate, and recall
+
+# Multi-class Classification IDS Analysis and Results
+
+```{r Train the classifiers for multi-class classification, echo=FALSE, message=FALSE, warning=FALSE}
+multi_class_models <- lapply(classifiers, classifier_trained_model, training_data = multi_class_data$train)
+```
+
+We applied the flow proposed in Section \@ref(methodology-classifiers) to the six filters mentioned in Table \@ref(tab:classifiers-desc-tab) with the default tuning grid values from `caret` on the multi-class classification IDS. In this section, we will analyze the training time of the parameters tuning and the final model, the optimal tuned parameters, and the features importance.
+
+## Multi-class Classification Training Analysis
+
+### Training Time
+
+```{r multi-training-times-fig, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "Training Time of Best Tuned Multi-class Classifiers", fig.pos = "ht!", out.extra = ""}
+multi_classifiers_times <- bind_rows(lapply(X = multi_class_models, FUN = times_transformer))
+multi_classifiers_times %>%
+  ggplot(aes(x = classifier, y = final)) +
+  geom_bar(stat = "identity") +
+  geom_label(aes(label = sprintf('%0.5f', final))) +
+  scale_y_log10() +
+  labs(title = "Training Time of Best Tuned Multi-class Classifiers", x = "Classifier", y = "Time (seconds)")
+```
+
+### Optimal Tuned Parameters
+
+```{r multi-tuning-tab, echo=FALSE, message=FALSE, warning=FALSE}
+bind_rows(lapply(X = multi_class_models, FUN = tuning_table)) %>%
+  kbl(caption = "Multi-class Classification Tuning", col.names = c("Classifier", "Parameters", "Accuracy", "Tuning Time (seconds)")) %>%
+  kable_styling(latex_options = c("HOLD_position"), position = "center") %>%
+  column_spec(1, border_left = T) %>%
+  column_spec(4, border_right = T) %>%
+  row_spec(0, bold = T)
+```
+
+### Features Importance
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "T", fig.pos = "ht!", out.extra = ""}
+ggplot(varImp(multi_class_models[[1]]), top = 5)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap = "T", fig.pos = "ht!", out.extra = ""}
+ggplot(varImp(multi_class_models[[5]]), top = 5)
+```
+
+## Multi-class Classification Performance
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+multi_class_preds <- lapply(multi_class_models, classifier_predict, testing_data = multi_class_data$test)
+
+accuracy_tibble <- function(idx) {
+    return(tibble(classifier = classifiers[idx], accuracy = multi_class_preds[[idx]]$overall["Accuracy"][[1]]))
+}
+
+multi_acc <- data.frame(bind_rows(lapply(X = seq_along(classifiers), FUN = accuracy_tibble)))
+
+metrics_calculator <- function(idx) {
+    mtrx <- multi_class_preds[[idx]]$table
+    mtrx_row_sums <- rowSums(mtrx)
+    mtrx_col_sum <- colSums(mtrx)
+    mtrx_diag_sum <- sum(diag(mtrx))
+    mtrx_sum <- sum(mtrx)
+    metric <- function(cls) {
+        cls_TP <- mtrx[cls, cls]
+        cls_FP <- mtrx_row_sums[cls][[1]] - mtrx[cls, cls]
+        cls_FN <- mtrx_col_sum[cls][[1]] - mtrx[cls, cls]
+        cls_TN <- mtrx_sum - (cls_TP + cls_FP + cls_FN)
+        return(tibble(classifier = classifiers[idx], class = cls, TP = cls_TP, FP = cls_FP, FN = cls_FN, TN = cls_TN))
+    }
+    return(bind_rows(lapply(X = c("X1", "X2", "X3", "X4", "X5"), FUN = metric)))
+}
+multi_metrics <- data.frame(bind_rows(lapply(X = seq_along(classifiers), FUN = metrics_calculator))) %>%
+        mutate(detection_rate = TP / (TP + FN),  far = FP / (FP + TN)) %>%
+        group_by(class) %>%
+        mutate(max_dr = max(detection_rate), min_far = invoke(pmin, na_if(far, 0), na.rm = TRUE))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+multi_acc %>%
+  ggplot(aes(x = classifier, y = accuracy)) +
+  geom_bar(stat = "identity") +
+  geom_label(aes(label = sprintf('%0.5f', accuracy), fontface = ifelse(accuracy == max(accuracy), 2, 1)), vjust = "inward")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+multi_metrics %>%
+  ggplot(aes(x = classifier, y = far)) +
+  geom_bar(stat = "identity") +
+  geom_label(aes(label = sprintf('%0.5f', far), fontface = ifelse(far == min_far, 2, 1)), vjust = "inward") +
+  facet_grid(class~.)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.cap="F", out.extra=""}
+multi_metrics %>%
+  ggplot(aes(x = classifier, y = detection_rate)) +
+  geom_bar(stat = "identity") +
+  geom_label(aes(label = sprintf('%0.5f', detection_rate), fontface = ifelse(detection_rate == max_dr, 2, 1)), vjust = "inward") +
+  facet_grid(class~.)
+```
 
 # Conclusion
 

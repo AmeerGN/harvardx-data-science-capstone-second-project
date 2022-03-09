@@ -126,6 +126,7 @@ tidy.step_nominalpdf <- function(x, ...) {
 # if(!require(RSNNS)) install.packages("RSNNS", repos = "http://cran.us.r-project.org")
 # parRF method required library
 # if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+# if(!require(matrixStats)) install.packages("matrixStats", repos = "http://cran.us.r-project.org")
 
 library(tidyverse)
 library(caret)
@@ -342,7 +343,6 @@ classifiers <- c("rpart", "naive_bayes", "knn", "svmLinear", "parRF", "mlp")
 binary_class_data <- prepare_data(TRUE, nsl_kdd_train_csv, nsl_kdd_test_csv)
 binary_class_models <- lapply(classifiers, classifier_trained_model, training_data = binary_class_data$train)
 binary_class_preds <- lapply(binary_class_models, classifier_predict, testing_data = binary_class_data$test)
-
 # binary_class_models[[1]]$modelInfo$label
 # binary_class_models[[1]]$modelInfo$library
 # binary_class_models[[1]]$modelInfo$type
@@ -351,12 +351,37 @@ binary_class_preds <- lapply(binary_class_models, classifier_predict, testing_da
 # binary_class_models[[1]]$results
 # binary_class_models[[1]]$bestTune
 # binary_class_models[[1]]$times
-# plot(binary_class_models[[1]])
+# ggplot(binary_class_models[[1]])
 # predictors(binary_class_models[[1]]) # not sure if needed
 # varImp(binary_class_models[[1]]) # read the docs for further details
+# plotObj <- sortImp(data, top)
+# if (ncol(plotObj) == 2) {
+#   plotObj <- plotObj[, 1, drop = FALSE]
+#   names(plotObj) <- "Importance"
+# }
+# featureNames <- rownames(plotObj)
+# outcomeNames <- colnames(plotObj)
+# if (ncol(plotObj) > 1) {
+#   stackedData <- stack(plotObj)
+#   stackedData$Feature <- factor(rep(featureNames, length(outcomeNames)),
+#                                 levels = rev(featureNames))
+#   names(stackedData) <- c("Importance", "Class", "Feature")
+#   Feature <- Importance <- NULL
+#   out <- ggplot(stackedData, aes(x = Feature, y = Importance)) +
+#     geom_bar(stat = "identity") + facet_wrap(~Class) +
+#     coord_flip()
+# }
+# else {
+#   stackedData <- plotObj
+#   stackedData$Feature <- factor(rep(featureNames, length(outcomeNames)),
+#                                 levels = rev(featureNames))
+#   names(stackedData) <- c("Importance", "Feature")
+#   out <- ggplot(stackedData, aes(x = Feature, y = Importance)) +
+#     geom_bar(stat = "identity") + coord_flip()
+# }
+# out
 # binary_preds <- predict(binary_class_models[[1]], binary_class_data$test)
 # confusionMatrix(binary_preds, binary_class_data$test$label)
-# Other classifiers: glm, lda, qda, gamLoess, rf
 
 ##########################################################
 # Classification for multi-label data
