@@ -16,8 +16,4 @@ The dataset for this project is [NSL-KDD dataset](https://www.unb.ca/cic/dataset
 
 ### R Markdown Report File
 
-`intrusion_detection_system.Rmd` contains the detailed report of this project, including its goals, methodology, and results. This report should be runnable, and must be consistent with the R script file.  
-To generate a PDF version of this report, we use the following command in R Console:  
-```R
-rmarkdown::render("intrusion_detection_system.Rmd", "pdf_document")
-```
+`intrusion_detection_system.Rmd` contains the detailed report of this project, including its goals, methodology, and results. This report should be runnable, and must be consistent with the R script file. This is referencing a file called `references.bib` which contains the BibTex for all the references used. And it is referencing `ieee.csl` file which is used to format the citations and references.
